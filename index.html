@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>SIPO 人才测评系统 V3.80</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --sipo-blue: #2c3e50; --sipo-accent: #c0392b; --bg: #f4f7f6; --disabled: #bdc3c7; }
+        body { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; background: var(--bg); padding: 10px; margin: 0; }
+        .container { max-width: 650px; margin: 10px auto; background: white; padding: 25px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); box-sizing: border-box; }
+        .header { text-align: center; border-bottom: 2px solid var(--sipo-blue); padding-bottom: 15px; margin-bottom: 25px; position: relative; }
+        .header h1 { font-size: 20px; color: var(--sipo-blue); margin: 0; }
+        #timerBox { position: absolute; right: 0; top: 0; color: var(--sipo-accent); font-weight: bold; font-family: monospace; font-size: 14px; }
+        .step { display: none; } .step.active { display: block; animation: fadeIn 0.4s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .option-card { border: 1.5px solid #eee; padding: 15px; margin-bottom: 10px; border-radius: 12px; cursor: pointer; transition: 0.3s; font-size: 15px; }
+        .option-card:hover { border-color: var(--sipo-blue); background: #f0f7ff; }
+        input, select { width: 100%; padding: 14px; margin: 8px 0; border: 1px solid #ddd; border-radius: 10px; font-size: 14px; box-sizing: border-box; -webkit-appearance: none; }
+        .btn-primary { width: 100%; background: var(--sipo-blue); color: white; border: none; padding: 16px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 16px; transition: 0.3s; }
+        .btn-primary:disabled { background: var(--disabled); cursor: not-allowed; }
+        .progress-container { height: 6px; background: #eee; border-radius: 3px; margin-bottom: 20px; }
+        .progress-fill { height: 100%; background: var(--sipo-blue); width: 0%; transition: 0.4s; }
+        .result-line { margin: 12px 0; font-size: 15px; line-height: 1.6; color: #333; }
+        .highlight { color: var(--sipo-accent); font-weight: bold; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>SIPO 人才测评系统</h1>
+        <div id="timerBox" style="display:none;">用时 00:00</div>
+    </div>
+    
+    <div id="step1" class="step active">
+        <p style="color:#666; font-size:14px;">欢迎参加 SIPO 2026 战略人才测评。请确保填写准确，以便系统精准投放分析报告。</p>
+        <input type="text" id="empName" placeholder="您的姓名 (必填)" oninput="checkForm()">
+        <input type="email" id="empEmail" placeholder="电子邮箱 (请填写真实邮箱，勿浪费AI算力)" oninput="checkForm()">
+        <select id="empJob" onchange="checkForm()">
+            <option value="">请选择岗位职能 (必填)</option>
+            <option value="总经理">总经理</option>
+            <option value="国际贸易业务总监">国际贸易业务总监</option>
+            <option value="生产供应链总监">生产供应链总监</option>
+            <option value="国际贸易业务员">国际贸易业务员</option>
+            <option value="生产跟单">生产跟单</option>
+            <option value="业务跟单">业务跟单</option>
+            <option value="运营助理">运营助理</option>
+        </select>
+        <button id="startBtn" class="btn-primary" onclick="startQuiz()" disabled>开始测评</button>
+    </div>
+
+    <div id="step2" class="step">
+        <div class="progress-container"><div id="progressBar" class="progress-fill"></div></div>
+        <h3 id="qTitle" style="font-size:16px; color:var(--sipo-blue);"></h3>
+        <div id="optionsList"></div>
+    </div>
+
+    <div id="step3" class="step" style="text-align: center;">
+        <div id="finalText" style="text-align:left;"></div>
+        <canvas id="resultChart" style="margin: 20px 0; max-height: 250px;"></canvas>
+        <button class="btn-primary" onclick="location.reload()" style="background:#95a5a6;">重新测评</button>
+    </div>
+</div>
+
+<script>
+    const WEB_APP_URL = "https://royal-math-3688.mymodestfashion.workers.dev/"; 
+    
+    // 此处已包含 40 题全量题库
+    const rawData = [
+        { id: 1, opts: [{t:'C', w:'冒险精神 - 对新事物下决心去做'}, {t:'P', w:'适应程度 - 轻松自如融入任何环境'}, {t:'S', w:'生动表现 - 表现生动多手势'}, {t:'M', w:'分析能力 - 准确知道所有细节之间的逻辑关系'}] },
+        { id: 2, opts: [{t:'C', w:'勇敢程度 - 敢于冒险，下决心做好'}, {t:'S', w:'愉快心情 - 带给他人欢乐，令人喜欢，容易相处'}, {t:'P', w:'外交能力 - 待人得体有耐心'}, {t:'M', w:'讲究细节 - 做事秩序井然，记忆清新'}] },
+        { id: 3, opts: [{t:'M', w:'持久力度 - 完成一件事后才接受新事'}, {t:'S', w:'娱乐程度 - 充满乐趣与幽默感'}, {t:'C', w:'说服能力 - 用逻辑与事实服人'}, {t:'P', w:'抗干扰力 - 在任何冲突中不受干扰,保持清醒头脑'}] },
+        { id: 4, opts: [{t:'S', w:'振奋精神 - 始终精神愉快，并把快乐推广到周围'}, {t:'P', w:'坚持作风 - 情绪平稳，反应永远能让人预料到'}, {t:'M', w:'文化艺术 - 对学术，艺术特别爱好'}, {t:'C', w:'自信程度 - 自我肯定个人能力与成功'}] },
+        { id: 5, opts: [{t:'P', w:'包容程度 - 易接受别人的观点，不愿反对'}, {t:'M', w:'牺牲精神 - 愿为他人利益牺牲自己'}, {t:'S', w:'社交能力 - 认为与人相处是好玩且容易的'}, {t:'C', w:'意识强烈 - 对事物有清晰的蓝图及把握'}] },
+        { id: 6, opts: [{t:'M', w:'理想主义 - 以自己完美的标准去衡量事物'}, {t:'C', w:'独立能力 - 自给自足，不需他人帮忙'}, {t:'P', w:'无攻击性 - 说话、举止不轻易冒犯他人'}, {t:'S', w:'激发能力 - 经常鼓励并带动他人参与'}] },
+        { id: 7, opts: [{t:'M', w:'体贴他人 - 记住每一个特别的日子，且关心他人'}, {t:'P', w:'控制能力 - 情绪不外露，处事冷静'}, {t:'C', w:'竞争能力 - 把每一件事都看作是竞争'}, {t:'S', w:'信服能力 - 通过个性而非逻辑使人信服'}] },
+        { id: 8, opts: [{t:'S', w:'感情外露 - 毫无保留地表达情绪'}, {t:'C', w:'坚决果断 - 很快能下决心'}, {t:'P', w:'尖刻幽默 - 冷嘲热讽式的幽默'}, {t:'M', w:'深沉程度 - 举止深沉且喜欢思想'}] },
+        { id: 9, opts: [{t:'S', w:'清新振作 - 给他人以清新、生命力的感觉'}, {t:'M', w:'尊敬仰慕 - 愿意公开表示对别人的仰慕'}, {t:'P', w:'封闭保守 - 自我约束，不轻易卷入'}, {t:'C', w:'聪明机智 - 对事物反应敏捷'}] },
+        { id: 10, opts: [{t:'P', w:'调解者 - 经常能够调和不同的意见'}, {t:'M', w:'音乐性 - 拥有较强的审美及艺术感知'}, {t:'C', w:'行动者 - 必须处于不断的工作和活动中'}, {t:'S', w:'结交者 - 喜欢各种聚会且乐于认识人'}] },
+        { id: 11, opts: [{t:'P', w:'满足感觉 - 对自己所拥有的感到满足'}, {t:'M', w:'敏感程度 - 易受他人伤害，容易敏感'}, {t:'C', w:'自立能力 - 很有才干，深信自己的能力'}, {t:'S', w:'生动个性 - 精力充沛，充满生气'}] },
+        { id: 12, opts: [{t:'M', w:'考虑周到 - 永远记住别人的需要'}, {t:'C', w:'固执者 - 决心以自己的意愿行事'}, {t:'S', w:'发言者 - 不断地说话、讲故事以供娱乐'}, {t:'P', w:'容忍者 - 易于接受他人的想法和举止'}] },
+        { id: 13, opts: [{t:'M', w:'计划能力 - 必须在开始前先定好计划'}, {t:'P', w:'忍耐程度 - 很难被激怒且从不发脾气'}, {t:'C', w:'积极程度 - 把事情看作是有把握的'}, {t:'S', w:'推广能力 - 通过魅力使他人参与及支持'}] },
+        { id: 14, opts: [{t:'P', w:'聆听者 - 愿意听别人说话，且表现兴趣'}, {t:'M', w:'忠心程度 - 对理想、人、工作都绝对忠诚'}, {t:'C', w:'领导者 - 天生的领袖，不自觉地去指挥'}, {t:'S', w:'生机活力 - 充满热情且令人振奋'}] },
+        { id: 15, opts: [{t:'C', w:'把握程度 - 很快能控制任何场面'}, {t:'S', w:'灵活变动 - 能够根据环境改变自己'}, {t:'M', w:'按部就班 - 喜欢在有秩序的环境下工作'}, {t:'P', w:'害羞程度 - 比较内向，安静且不显眼'}] },
+        { id: 16, opts: [{t:'P', w:'知足长乐 - 很容易满足，不追求名利'}, {t:'C', w:'领导型 - 指挥及主导的能力'}, {t:'M', w:'图表型 - 喜欢画图、表或把事列出'}, {t:'S', w:'讨人喜欢 - 令人感到愉悦，愿意亲近'}] },
+        { id: 17, opts: [{t:'M', w:'有条理 - 处事井井有条'}, {t:'P', w:'迁就配合 - 愿意顺从别人的意见'}, {t:'C', w:'直言不讳 - 坦率地说出自己的想法'}, {t:'S', w:'乐观自信 - 对生活充满希望和信心'}] },
+        { id: 18, opts: [{t:'M', w:'完美主义 - 设立高标准，凡事求尽善尽美'}, {t:'P', w:'和蔼性 - 易于相处且心态平和'}, {t:'C', w:'工作者 - 一切为了完成任务'}, {t:'S', w:'受欢迎者 - 社交场合的中心人物'}] },
+        { id: 19, opts: [{t:'P', w:'友善 - 态度亲切，容易接近'}, {t:'M', w:'忠诚 - 保持始终如一的立场'}, {t:'S', w:'趣味 - 喜欢开玩笑且风趣'}, {t:'C', w:'强迫性 - 必须指挥别人且喜欢控制'}] },
+        { id: 20, opts: [{t:'S', w:'活跃型 - 精力旺盛，永不停歇'}, {t:'C', w:'勇敢型 - 无所畏惧，迎接挑战'}, {t:'M', w:'模范型 - 行为举止堪称他人的表率'}, {t:'P', w:'平稳型 - 情绪稳定且处变不惊'}] },
+        { id: 21, opts: [{t:'P', w:'枯燥乏味 - 缺乏热情且无趣'}, {t:'M', w:'忸忸怩怩 - 害羞且不愿表现'}, {t:'S', w:'华而不实 - 只有外表，缺乏内容'}, {t:'C', w:'独断专横 - 必须由自己说了算'}] },
+        { id: 22, opts: [{t:'M', w:'孤独离群 - 不合群且喜好安静'}, {t:'C', w:'工作狂 - 除了工作别无爱好'}, {t:'S', w:'需要认可 - 渴望得到赞美和承认'}, {t:'P', w:'担心 - 经常感到焦虑或不安'}] },
+        { id: 23, opts: [{t:'S', w:'散漫 - 缺乏条理和组织'}, {t:'C', w:'缺同情 - 对他人的痛苦无动于衷'}, {t:'P', w:'无热忱 - 很难被任何事激发'}, {t:'M', w:'不宽恕 - 很难忘记他人的过错'}] },
+        { id: 24, opts: [{t:'P', w:'害怕 - 经常退缩或不敢尝试'}, {t:'M', w:'过分敏感 - 对他人的评论反应过度'}, {t:'C', w:'不圆滑老练 - 说话太直，易伤人'}, {t:'S', w:'喋喋不休 - 说话不停，不听别人'}] },
+        { id: 25, opts: [{t:'C', w:'逆反心理 - 喜欢与人唱反调'}, {t:'P', w:'保留程度 - 不愿表露内心想法'}, {t:'M', w:'怨恨个性 - 容易记仇'}, {t:'S', w:'重复特性 - 同样的话重复说多遍'}] },
+        { id: 26, opts: [{t:'M', w:'喜欢多疑 - 很难完全信任他人'}, {t:'C', w:'好擅权 - 喜欢发号施令'}, {t:'P', w:'容易抑郁 - 心情容易低落'}, {t:'S', w:'生活紊乱 - 生活和工作一团糟'}] },
+        { id: 27, opts: [{t:'P', w:'害怕 - 缺乏安全感'}, {t:'M', w:'挑剔性 - 对人对事极度苛刻'}, {t:'S', w:'健忘性 - 丢三落四，不记事'}, {t:'C', w:'耿直 - 说话生硬，缺乏弹性'}] },
+        { id: 28, opts: [{t:'M', w:'内向 - 只生活在自己的世界'}, {t:'P', w:'没有异议 - 即使不同意也不表达'}, {t:'C', w:'排斥他人 - 不愿他人进入自己的生活'}, {t:'S', w:'反反复复 - 情绪和决定多变'}] },
+        { id: 29, opts: [{t:'S', w:'喜欢插嘴 - 经常打断别人说话'}, {t:'C', w:'不耐烦 - 很难等待哪怕一分钟'}, {t:'P', w:'优柔巩断 - 极难做决定'}, {t:'M', w:'无安全感 - 总觉得自己不够好'}] },
+        { id: 30, opts: [{t:'S', w:'杂乱无章 - 经常找不到东西'}, {t:'M', w:'容易情绪化 - 情绪极易受波动'}, {t:'P', w:'含糊语言 - 表达不清晰'}, {t:'C', w:'喜欢操纵 - 利用别人达到目的'}] },
+        { id: 31, opts: [{t:'P', w:'不善表达 - 很难说出内心感受'}, {t:'M', w:'不受欢迎 - 因高冷让人望而生畏'}, {t:'S', w:'难以预测 - 情绪变化无常'}] },
+        { id: 32, opts: [{t:'P', w:'行动缓慢 - 做事磨蹭'}, {t:'M', w:'容易怀疑 - 总在寻找背后的动机'}, {t:'C', w:'比较顽固 - 认准了就不回头'}, {t:'S', w:'喜欢表现 - 必须成为注意力的中心'}] },
+        { id: 33, opts: [{t:'P', w:'犹豫不决 - 考虑太多导致停步'}, {t:'M', w:'难以取悦 - 极高标准让人疲惫'}, {t:'S', w:'随意性 - 不依照方法做事'}, {t:'C', w:'固执己见 - 只相信自己的判断'}] },
+        { id: 34, opts: [{t:'S', w:'嗓门大 - 说话声震全场'}, {t:'C', w:'喜欢统治 - 习惯于命令他人'}, {t:'P', w:'懒惰性 - 总是想方设法偷懒'}, {t:'M', w:'孤僻 - 不愿与人交往'}] },
+        { id: 35, opts: [{t:'M', w:'悲观 - 总是看到坏的一面'}, {t:'C', w:'自负 - 觉得自己比谁都强'}, {t:'S', w:'放纵 - 缺乏自控力'}, {t:'P', w:'平平淡淡 - 缺乏进取心'}] },
+        { id: 36, opts: [{t:'C', w:'容易发怒 - 极易被点燃'}, {t:'P', w:'做事拖延 - 凡事都要等到最后一刻'}, {t:'M', w:'喜欢猜疑 - 总觉得有人害自己'}, {t:'S', w:'不专注 - 极易分心'}] },
+        { id: 37, opts: [{t:'P', w:'没有目标 - 混日子'}, {t:'M', w:'受冷落 - 容易感到被孤立'}, {t:'C', w:'喜欢争吵 - 喜欢通过辩论压倒别人'}, {t:'S', w:'多变 - 计划赶不上变化'}] },
+        { id: 38, opts: [{t:'P', w:'勉强性 - 不情愿地做任何事'}, {t:'M', w:'报复性 - 有仇必报'}, {t:'S', w:'做事轻率 - 做事不经大脑'}, {t:'C', w:'容易烦躁 - 缺乏耐性'}] },
+        { id: 39, opts: [{t:'P', w:'漠不关心 - 对任何事都无所谓'}, {t:'C', w:'莽撞 - 行动先于思考'}, {t:'M', w:'消极 - 充满负能量'}, {t:'S', w:'天真 - 容易被骗'}] },
+        { id: 40, opts: [{t:'P', w:'容易妥协 - 没有主见'}, {t:'M', w:'喜欢批评 - 看什么都不顺眼'}, {t:'C', w:'太狡猾 - 为达目的不择手段'}, {t:'S', w:'擅变化 - 承诺难以兑现'}] }
+    ];
+
+    let questions = [];
+    let currentIdx = 0;
+    let scoresP1 = {S:0, M:0, C:0, P:0};
+    let scoresP2 = {S:0, M:0, C:0, P:0};
+    let details = [];
+    let startTime, timerInterval;
+
+    function checkForm() {
+        const name = document.getElementById('empName').value.trim();
+        const email = document.getElementById('empEmail').value.trim();
+        const job = document.getElementById('empJob').value;
+        const btn = document.getElementById('startBtn');
+        const emailReg = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // 仅做基础格式判断
+        
+        if (name && emailReg.test(email) && job) {
+            btn.disabled = false;
+        } else {
+            btn.disabled = true;
+        }
+    }
+
+    function startQuiz() {
+        window.user = { 
+            name: document.getElementById('empName').value.trim(), 
+            email: document.getElementById('empEmail').value.trim(), 
+            job: document.getElementById('empJob').value 
+        };
+        let p1 = shuffle([...rawData.slice(0, 20)]);
+        let p2 = shuffle([...rawData.slice(20, 40)]);
+        questions = p1.concat(p2);
+        
+        document.getElementById('step1').classList.remove('active');
+        document.getElementById('step2').classList.add('active');
+        
+        startTime = new Date();
+        document.getElementById('timerBox').style.display = 'block';
+        timerInterval = setInterval(() => {
+            let diff = Math.floor((new Date() - startTime) / 1000);
+            let m = String(Math.floor(diff/60)).padStart(2,'0');
+            let s = String(diff%60).padStart(2,'0');
+            document.getElementById('timerBox').innerText = "用时 " + m + ":" + s;
+        }, 1000);
+        
+        showQ();
+    }
+
+    function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
+
+    function showQ() {
+        const q = questions[currentIdx];
+        document.getElementById('qTitle').innerText = "第 " + (currentIdx + 1) + " / 40 题 " + (currentIdx < 20 ? '(特质篇)' : '(压力篇)');
+        const list = document.getElementById('optionsList');
+        list.innerHTML = '';
+        shuffle([...q.opts]).forEach(opt => {
+            const div = document.createElement('div');
+            div.className = 'option-card';
+            div.innerText = opt.w;
+            div.onclick = () => {
+                if(currentIdx < 20) scoresP1[opt.t]++; else scoresP2[opt.t]++;
+                details.push({ id: q.id, type: opt.t, text: opt.w });
+                currentIdx++;
+                if(currentIdx < 40) showQ(); else finish();
+            };
+            list.appendChild(div);
+        });
+        document.getElementById('progressBar').style.width = (currentIdx / 40 * 100) + '%';
+    }
+
+    function finish() {
+        clearInterval(timerInterval);
+        const durationText = document.getElementById('timerBox').innerText.replace("用时 ", "");
+        const total = { S: scoresP1.S+scoresP2.S, M: scoresP1.M+scoresP2.M, C: scoresP1.C+scoresP2.C, P: scoresP1.P+scoresP2.P };
+        const sorted = Object.entries(total).sort((a,b) => b[1]-a[1]);
+        const typeNames = { 'S': '活跃', 'M': '完善', 'C': '能力', 'P': '平稳' };
+        const mainType = typeNames[sorted[0][0]];
+        const hiddenType = typeNames[sorted[1][0]];
+        const combinedType = mainType + hiddenType + "型";
+        const report = generateAnalysis(window.user.job, total, sorted[0][0]);
+
+        document.getElementById('finalText').innerHTML = " \
+            <div class='result-line'><strong>" + window.user.name + "，谢谢您！</strong><br>当前测评已完成，AI分析系统将依据您的测评进行深度分析</div> \
+            <div class='result-line'>您的主导性格是：<span class='highlight'>" + mainType + "型</span> | 隐形性格是：<span class='highlight'>" + hiddenType + "型</span></div> \
+            <div class='result-line'>得分详情：S:" + total.S + " | M:" + total.M + " | C:" + total.C + " | P:" + total.P + "</div> \
+            <div class='result-line'>测评总耗时：<span class='highlight'>" + durationText + "</span></div> \
+            <div class='result-line'>岗位适配度：<span class='highlight'>" + report.percent + "%</span></div> \
+            <div class='result-line' style='color:var(--sipo-blue); font-weight:bold;'>请检查您测试所留邮箱，查收测试结果 (" + window.user.email + ")。</div> \
+        ";
+
+        new Chart(document.getElementById('resultChart'), {
+            type: 'radar',
+            data: { labels: ['S', 'M', 'C', 'P'], datasets: [{ label: '性格维度', data: [total.S, total.M, total.C, total.P], backgroundColor: 'rgba(44,62,80,0.2)', borderColor: '#2c3e50' }] },
+            options: { scales: { r: { min: 0, max: 20 } } }
+        });
+
+        document.getElementById('step2').classList.remove('active');
+        document.getElementById('step3').classList.add('active');
+
+        fetch(WEB_APP_URL, {
+            method: 'POST',
+            body: JSON.stringify({
+                name: window.user.name, email: window.user.email, job: window.user.job,
+                duration: durationText, S1: scoresP1.S, S2: scoresP2.S, M1: scoresP1.M, M2: scoresP2.M,
+                C1: scoresP1.C, C2: scoresP2.C, P1: scoresP1.P, P2: scoresP2.P,
+                combinedType: combinedType, percent: report.percent, choiceDetails: details, report: report
+            })
+        });
+    }
+
+    function generateAnalysis(job, score, main) {
+        const config = {
+            'C': { strengths: "决策力强，目标感明确。", weakness: "可能过于强势。", action: "项目开拓、谈判。", verdict: "先锋力量", p: 92 },
+            'M': { strengths: "严谨细致，品质管控核心。", weakness: "决策周期较长。", action: "供应链管理、财务。", verdict: "稳定锚点", p: 95 },
+            'S': { strengths: "擅长社交，快速建立信任。", weakness: "琐碎行政耐心不足。", action: "品牌运营、展会。", verdict: "形象大使", p: 88 },
+            'P': { strengths: "情绪极稳，团队粘合剂。", weakness: "缺乏主动出击意愿。", action: "客户维护、售后。", verdict: "核心支撑", p: 85 }
+        };
+        return { percent: config[main].p, ...config[main] };
+    }
+</script>
+</body>
+</html>
+`;
